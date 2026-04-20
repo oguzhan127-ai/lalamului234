@@ -3417,28 +3417,28 @@ do
     serverPosPart.Name = "UN4_ServerPos"
     serverPosPart.Size = Vector3.new(4, 6, 2)
     serverPosPart.Transparency = 0.5
-    serverPosPart.Color = Color3.fromRGB(255, 0, 0)
+    serverPosPart.Color = Color3.fromRGB(95, 85, 255)
     serverPosPart.Anchored = true
     serverPosPart.CanCollide = false
     serverPosPart.CanQuery = false
     serverPosPart.Parent = workspace
     local serverPosBox = Instance.new("SelectionBox")
     serverPosBox.Adornee = serverPosPart
-    serverPosBox.Color3 = Color3.fromRGB(255, 0, 0)
+    serverPosBox.Color3 = Color3.fromRGB(95, 85, 255)
     serverPosBox.LineThickness = 0.1
     serverPosBox.Transparency = 0
     serverPosBox.SurfaceTransparency = 0.85
     local serverPosBB = Instance.new("BillboardGui", serverPosPart)
-    serverPosBB.Size = UDim2.new(0, 110, 0, 20)
-    serverPosBB.StudsOffset = Vector3.new(0, 4, 0)
+    serverPosBB.Size = UDim2.new(0, 140, 0, 30)
+    serverPosBB.StudsOffset = Vector3.new(0, 5, 0)
     serverPosBB.AlwaysOnTop = true
     local serverPosLbl = Instance.new("TextLabel", serverPosBB)
     serverPosLbl.Size = UDim2.new(1,0,1,0)
     serverPosLbl.BackgroundTransparency = 1
-    serverPosLbl.Text = "Server Position"
+    serverPosLbl.Text = "Serverposition"
     serverPosLbl.Font = Enum.Font.GothamBold
-    serverPosLbl.TextSize = 11
-    serverPosLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
+    serverPosLbl.TextSize = 13
+    serverPosLbl.TextColor3 = Color3.fromRGB(210, 200, 255)
     serverPosLbl.TextStrokeTransparency = 0
     serverPosLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0)
     serverPosPart.Transparency = 1
@@ -3487,7 +3487,10 @@ do
         serverPosBox.Parent = serverPosPart
         serverPosBB.Enabled = true
         if hum then hum.WalkSpeed = DESYNC_SPEED end
-        if raknet then pcall(function() raknet.add_send_hook(rakNetHook) end) end
+        if raknet then
+            pcall(function() raknet.desync(true) end)
+            pcall(function() raknet.add_send_hook(rakNetHook) end)
+        end
     end
 
     local function stopDesync()
@@ -3506,7 +3509,10 @@ do
         STEAL_SPEED_VAL = prevSteal
         if sbVbox then sbVbox.Text = tostring(SPEED_VAL) end
         if ssVbox then ssVbox.Text = tostring(STEAL_SPEED_VAL) end
-        if raknet then pcall(function() raknet.remove_send_hooks() end) end
+        if raknet then
+            pcall(function() raknet.desync(false) end)
+            pcall(function() raknet.remove_send_hooks() end)
+        end
     end
 
     -- Desync button card
@@ -3600,6 +3606,17 @@ do
                 prevSteal = STEAL_SPEED_VAL
                 startDesync()
                 dsLblBot.Text = "Active"
+                task.delay(1, function()
+                    if desyncActive then
+                        pcall(function()
+                            local char = player.Character
+                            local hum = char and char:FindFirstChildOfClass("Humanoid")
+                            if hum then
+                                hum.Health = 0
+                            end
+                        end)
+                    end
+                end)
                 TweenService:Create(dsDot, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
                     {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
                 dsDotGrad.Enabled = true
