@@ -3412,8 +3412,101 @@ do
 
     local desyncActive = false
 
+    -- Server position ghost (shows where server thinks you are)
+    local serverPosPart = Instance.new("Part")
+    serverPosPart.Name = "UN4_ServerPos"
+    serverPosPart.Size = Vector3.new(4, 6, 2)
+    serverPosPart.Transparency = 0.5
+    serverPosPart.Color = Color3.fromRGB(255, 0, 0)
+    serverPosPart.Anchored = true
+    serverPosPart.CanCollide = false
+    serverPosPart.CanQuery = false
+    serverPosPart.Parent = workspace
+    local serverPosBox = Instance.new("SelectionBox")
+    serverPosBox.Adornee = serverPosPart
+    serverPosBox.Color3 = Color3.fromRGB(255, 0, 0)
+    serverPosBox.LineThickness = 0.1
+    serverPosBox.Transparency = 0
+    serverPosBox.SurfaceTransparency = 0.85
+    local serverPosBB = Instance.new("BillboardGui", serverPosPart)
+    serverPosBB.Size = UDim2.new(0, 110, 0, 20)
+    serverPosBB.StudsOffset = Vector3.new(0, 4, 0)
+    serverPosBB.AlwaysOnTop = true
+    local serverPosLbl = Instance.new("TextLabel", serverPosBB)
+    serverPosLbl.Size = UDim2.new(1,0,1,0)
+    serverPosLbl.BackgroundTransparency = 1
+    serverPosLbl.Text = "Server Position"
+    serverPosLbl.Font = Enum.Font.GothamBold
+    serverPosLbl.TextSize = 11
+    serverPosLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
+    serverPosLbl.TextStrokeTransparency = 0
+    serverPosLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0)
+    serverPosPart.Transparency = 1
+    serverPosBB.Enabled = false
+
+    -- RakNet hook - intercepts position packet (PacketId 27)
+    local function rakNetHook(packet)
+        if desyncActive and packet.PacketId == 27 then
+            local data = packet.AsBuffer
+            buffer.writeu32(data, 1, math.random(1, 5))
+            packet:SetData(data)
+        end
+    end
+
+    -- Disable ragdoll during desync
+    RunService.Stepped:Connect(function()
+        if not desyncActive then return end
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    end)
+
+    local function setDesyncFlags()
+        local flags = {
+            ["PhysicsSenderMaxBandwidthBps"]                    = "150000",
+            ["S2PhysicsSenderRate"]                             = "80",
+            ["GameNetDontSendRedundantDeltaPositionMillionth"]  = "1",
+            ["GameNetPVHeaderLinearVelocityZeroCutoffExponent"] = "-500",
+        }
+        for name, value in pairs(flags) do
+            pcall(function() setfflag(name, value) end)
+        end
+    end
+
+    local function startDesync()
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp then return end
+        setDesyncFlags()
+        -- Freeze ghost at current server position
+        serverPosPart.CFrame = hrp.CFrame
+        serverPosPart.Transparency = 0.5
+        serverPosBox.Parent = serverPosPart
+        serverPosBB.Enabled = true
+        if hum then hum.WalkSpeed = DESYNC_SPEED end
+        if raknet then pcall(function() raknet.add_send_hook(rakNetHook) end) end
+    end
+
     local function stopDesync()
         if desyncConn then desyncConn:Disconnect(); desyncConn = nil end
+        serverPosPart.Transparency = 1
+        serverPosBox.Parent = nil
+        serverPosBB.Enabled = false
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.WalkSpeed = prevSpeed
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        end
+        SPEED_VAL = prevSpeed
+        STEAL_SPEED_VAL = prevSteal
+        if sbVbox then sbVbox.Text = tostring(SPEED_VAL) end
+        if ssVbox then ssVbox.Text = tostring(STEAL_SPEED_VAL) end
+        if raknet then pcall(function() raknet.remove_send_hooks() end) end
     end
 
     -- Desync button card
@@ -3464,13 +3557,12 @@ do
 
     local dsHit = Instance.new("TextButton", dsCard)
     dsHit.Size = UDim2.new(1,0,1,0); dsHit.BackgroundTransparency = 1
-    dsHit.Text = ""; dsHit.AutoButtonColor = false; dsHit.ZIndex = 10
+    dsHit.Text = ""; dsHit.AutoButtonColor = false; dsHit.ZIndex = 20
 
     local dsPressed, dsDragging = false, false
     local dsDragStart, dsCardStart = nil, nil
 
     dsHit.InputBegan:Connect(function(inp)
-        if _lockUI then return end
         if inp.UserInputType ~= Enum.UserInputType.MouseButton1
         and inp.UserInputType ~= Enum.UserInputType.Touch then return end
         dsPressed = true; dsDragging = false
@@ -3494,27 +3586,24 @@ do
         if inp.UserInputType ~= Enum.UserInputType.MouseButton1
         and inp.UserInputType ~= Enum.UserInputType.Touch then return end
         local wasDrag = dsDragging; dsPressed = false; dsDragging = false
-        if wasDrag then return end
-
-        if desyncActive then
-            -- Turn off desync
-            desyncActive = false
-            stopDesync()
-            dsLblBot.Text = "[None]"
-            TweenService:Create(dsDot, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(65,50,95), Size = UDim2.new(0,9,0,9)}):Play()
-            dsDotGrad.Enabled = false
-        else
-            -- Turn on desync
-            desyncActive = true
-            prevSpeed = SPEED_VAL
-            prevSteal = STEAL_SPEED_VAL
-            dsLblBot.Text = "Syncing..."
-            TweenService:Create(dsDot, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
-            dsDotGrad.Enabled = true
-            startDesync()
-            task.delay(5.2, function()
-                if desyncActive then dsLblBot.Text = "Active" end
-            end)
+        if not wasDrag then
+            if desyncActive then
+                desyncActive = false
+                stopDesync()
+                dsLblBot.Text = "[None]"
+                TweenService:Create(dsDot, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                    {BackgroundColor3 = Color3.fromRGB(65,50,95), Size = UDim2.new(0,9,0,9)}):Play()
+                dsDotGrad.Enabled = false
+            else
+                desyncActive = true
+                prevSpeed = SPEED_VAL
+                prevSteal = STEAL_SPEED_VAL
+                startDesync()
+                dsLblBot.Text = "Active"
+                TweenService:Create(dsDot, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                    {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
+                dsDotGrad.Enabled = true
+            end
         end
     end)
 
