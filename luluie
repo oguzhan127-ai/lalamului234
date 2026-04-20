@@ -3513,6 +3513,13 @@ do
             pcall(function() raknet.desync(false) end)
             pcall(function() raknet.remove_send_hooks() end)
         end
+        -- Remove BodyVelocity
+        local char2 = player.Character
+        local hrp2 = char2 and char2:FindFirstChild("HumanoidRootPart")
+        if hrp2 then
+            local bv = hrp2:FindFirstChild("UN4_DesyncBV")
+            if bv then bv:Destroy() end
+        end
     end
 
     -- Desync button card
