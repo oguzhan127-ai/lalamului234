@@ -3412,23 +3412,6 @@ do
 
     local desyncActive = false
 
-    local function startDesync()
-        if desyncConn then return end
-        desyncConn = RunService.Heartbeat:Connect(function()
-            if not desyncActive then return end
-            local c = player.Character
-            local h = c and c:FindFirstChild("HumanoidRootPart")
-            if not h then return end
-            -- Rapidly alternate velocity to desync server replication
-            h.AssemblyLinearVelocity = Vector3.new(
-                h.AssemblyLinearVelocity.X,
-                h.AssemblyLinearVelocity.Y,
-                h.AssemblyLinearVelocity.Z
-            )
-            h.CFrame = h.CFrame
-        end)
-    end
-
     local function stopDesync()
         if desyncConn then desyncConn:Disconnect(); desyncConn = nil end
     end
@@ -3513,28 +3496,26 @@ do
         local wasDrag = dsDragging; dsPressed = false; dsDragging = false
         if wasDrag then return end
 
-        if desyncActive then return end -- prevent double click
-        desyncActive = true
-        -- Save previous speeds
-        prevSpeed = SPEED_VAL
-        prevSteal = STEAL_SPEED_VAL
-        dsLblBot.Text = "Syncing..."
-        TweenService:Create(dsDot, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
-        dsDotGrad.Enabled = true
-        -- Set flags and respawn
-        setDesyncFlags()
-        task.spawn(function()
-            doRespawn()
-            task.wait(5.1)
-            -- After desync, set speeds
-            SPEED_VAL = DESYNC_SPEED
-            STEAL_SPEED_VAL = DESYNC_STEAL
-            if sbVbox then sbVbox.Text = tostring(DESYNC_SPEED) end
-            if ssVbox then ssVbox.Text = tostring(DESYNC_STEAL) end
-            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = DESYNC_SPEED end
-            dsLblBot.Text = "Active"
-        end)
+        if desyncActive then
+            -- Turn off desync
+            desyncActive = false
+            stopDesync()
+            dsLblBot.Text = "[None]"
+            TweenService:Create(dsDot, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(65,50,95), Size = UDim2.new(0,9,0,9)}):Play()
+            dsDotGrad.Enabled = false
+        else
+            -- Turn on desync
+            desyncActive = true
+            prevSpeed = SPEED_VAL
+            prevSteal = STEAL_SPEED_VAL
+            dsLblBot.Text = "Syncing..."
+            TweenService:Create(dsDot, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
+            dsDotGrad.Enabled = true
+            startDesync()
+            task.delay(5.2, function()
+                if desyncActive then dsLblBot.Text = "Active" end
+            end)
+        end
     end)
 
     local function slideInDesync()
