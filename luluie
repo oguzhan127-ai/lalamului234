@@ -3570,6 +3570,7 @@ do
     local dsDragStart, dsCardStart = nil, nil
 
     dsHit.InputBegan:Connect(function(inp)
+        if _lockUI then return end
         if inp.UserInputType ~= Enum.UserInputType.MouseButton1
         and inp.UserInputType ~= Enum.UserInputType.Touch then return end
         dsPressed = true; dsDragging = false
@@ -3652,6 +3653,238 @@ do
 
     if _cfgGet("desyncOn", false) then
         task.defer(function() desyncSg.Enabled = true; slideInDesync() end)
+    end
+end
+
+
+local dsrOn = false
+local DSR_SPEED_G = 44
+local DSR_STEAL_G = 28.5
+local dsrSwitchState = false
+local _dsrCfgOn = false -- loaded from config later
+-- DESYNC SPEED REDUCER
+do
+    local dsrPrevSpeed = SPEED_VAL
+    local dsrPrevSteal = STEAL_SPEED_VAL
+    local DSR_SPEED = 44
+    local DSR_STEAL = 28.5
+    DSR_SPEED_G = DSR_SPEED
+    DSR_STEAL_G = DSR_STEAL
+
+    local dsrSg = makeGui("ShadowHUD_DSR")
+    applyMobileScale(dsrSg)
+    dsrSg.Enabled = false
+
+    local DSRW = isMobile and 88 or 92
+    local DSRH = isMobile and 90 or 92
+
+    local dsrPosScaleX = _cfgGet("dsrBtnPosScaleX", isMobile and 0.06 or 0.04)
+    local dsrPosOffX   = _cfgGet("dsrBtnPosOffX",   0)
+    local dsrPosScaleY = _cfgGet("dsrBtnPosScaleY", 0)
+    local dsrPosOffY   = _cfgGet("dsrBtnPosOffY",   isMobile and 560 or 830)
+
+    local dsrCard = Instance.new("Frame", dsrSg)
+    dsrCard.Size             = UDim2.new(0, DSRW, 0, DSRH)
+    dsrCard.Position         = UDim2.new(dsrPosScaleX, dsrPosOffX, dsrPosScaleY, dsrPosOffY)
+    dsrCard.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
+    dsrCard.BorderSizePixel  = 0
+    dsrCard.ZIndex           = 2
+    corner(dsrCard, 16)
+    local dsrStroke = Instance.new("UIStroke", dsrCard)
+    dsrStroke.Color = Color3.fromRGB(0,0,0); dsrStroke.Thickness = 2
+    dsrStroke.Transparency = 0.35; dsrStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    local dsrAccBar = Instance.new("Frame", dsrCard)
+    dsrAccBar.Size = UDim2.new(0,3,0.78,0); dsrAccBar.Position = UDim2.new(0,8,0.11,0)
+    dsrAccBar.BackgroundColor3 = Color3.fromRGB(130,55,255); dsrAccBar.BorderSizePixel = 0; dsrAccBar.ZIndex = 4
+    corner(dsrAccBar, 2)
+    local dsrAccGrad = Instance.new("UIGradient", dsrAccBar)
+    dsrAccGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(160,60,255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(110,70,255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(50,140,255)),
+    }); dsrAccGrad.Rotation = 90
+
+    local dsrDot = Instance.new("Frame", dsrCard)
+    dsrDot.Size = UDim2.new(0,9,0,9); dsrDot.Position = UDim2.new(1,-16,0,9)
+    dsrDot.BackgroundColor3 = Color3.fromRGB(65,50,95); dsrDot.BorderSizePixel = 0; dsrDot.ZIndex = 5
+    corner(dsrDot, 5)
+    do local _s = Instance.new("UIStroke", dsrDot); _s.Color = Color3.fromRGB(0,0,0); _s.Thickness = 1; _s.Transparency = 0.035; _s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border end
+    local dsrDotGrad = Instance.new("UIGradient", dsrDot)
+    dsrDotGrad.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(160,60,255)),ColorSequenceKeypoint.new(0.5,Color3.fromRGB(110,70,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(50,140,255))})
+    dsrDotGrad.Enabled = false
+
+    local function mkDL2(txt, y)
+        local l = Instance.new("TextLabel", dsrCard)
+        l.Size = UDim2.new(1,-24,0,13); l.Position = UDim2.new(0,20,0,y)
+        l.BackgroundTransparency = 1; l.Text = txt
+        l.Font = Enum.Font.GothamBold; l.TextSize = 13
+        l.TextColor3 = Color3.fromRGB(225,220,240)
+        l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 4
+        return l
+    end
+    mkDL2("Desync",  19)
+    mkDL2("Speed",   32)
+    mkDL2("Reducer", 45)
+    local dsrLblBot = mkDL2("[None]", 58)
+    dsrLblBot.TextColor3 = Color3.fromRGB(225,220,240)
+
+    local dsrHit = Instance.new("TextButton", dsrCard)
+    dsrHit.Size = UDim2.new(1,0,1,0); dsrHit.BackgroundTransparency = 1
+    dsrHit.Text = ""; dsrHit.AutoButtonColor = false; dsrHit.ZIndex = 20
+
+    local dsrPressed, dsrDragging = false, false
+    local dsrDragStart, dsrCardStart = nil, nil
+
+    dsrHit.InputBegan:Connect(function(inp)
+        if _lockUI then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        dsrPressed = true; dsrDragging = false
+        dsrDragStart = Vector2.new(inp.Position.X, inp.Position.Y)
+        dsrCardStart = dsrCard.Position
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if not dsrPressed then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = Vector2.new(inp.Position.X, inp.Position.Y) - dsrDragStart
+        if delta.Magnitude > 6 then dsrDragging = true end
+        if dsrDragging then
+            local sc = isMobile and (1/0.72) or 1
+            dsrCard.Position = UDim2.new(dsrCardStart.X.Scale, dsrCardStart.X.Offset + delta.X*sc, dsrCardStart.Y.Scale, dsrCardStart.Y.Offset + delta.Y*sc)
+            dsrPosScaleX = dsrCard.Position.X.Scale; dsrPosOffX = dsrCard.Position.X.Offset
+            dsrPosScaleY = dsrCard.Position.Y.Scale; dsrPosOffY = dsrCard.Position.Y.Offset
+        end
+    end)
+    dsrHit.InputEnded:Connect(function(inp)
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local wasDrag = dsrDragging; dsrPressed = false; dsrDragging = false
+        if _apRunning then return end
+        if not wasDrag then
+            if dsrOn then
+                dsrOn = false
+                SPEED_VAL = dsrPrevSpeed
+                STEAL_SPEED_VAL = dsrPrevSteal
+                if sbVbox then sbVbox.Text = tostring(SPEED_VAL) end
+                if ssVbox then ssVbox.Text = tostring(STEAL_SPEED_VAL) end
+                local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = dsrPrevSpeed end
+                TweenService:Create(dsrDot, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                    {BackgroundColor3 = Color3.fromRGB(65,50,95), Size = UDim2.new(0,9,0,9)}):Play()
+                dsrDotGrad.Enabled = false
+            else
+                dsrPrevSpeed = SPEED_VAL
+                dsrPrevSteal = STEAL_SPEED_VAL
+                dsrOn = true
+                DSR_SPEED_G = DSR_SPEED
+                DSR_STEAL_G = DSR_STEAL
+                -- Actually set the speeds
+                SPEED_VAL = DSR_SPEED
+                STEAL_SPEED_VAL = DSR_STEAL
+                if sbVbox then sbVbox.Text = tostring(DSR_SPEED) end
+                if ssVbox then ssVbox.Text = tostring(DSR_STEAL) end
+                local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = DSR_SPEED end
+                TweenService:Create(dsrDot, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                    {BackgroundColor3 = Color3.fromRGB(130,55,255), Size = UDim2.new(0,11,0,11)}):Play()
+                dsrDotGrad.Enabled = true
+            end
+        end
+    end)
+
+    local function slideInDSR()
+        dsrCard.Position = UDim2.new(dsrPosScaleX, dsrPosOffX, 0, -DSRH - 20)
+        TweenService:Create(dsrCard, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Position = UDim2.new(dsrPosScaleX, dsrPosOffX, dsrPosScaleY, dsrPosOffY)}):Play()
+    end
+
+    -- Single row: "Desync Speed Reducer" label + 2 boxes + toggle
+    do
+        local dsrRow = Instance.new("Frame")
+        dsrRow.Size = UDim2.new(1,0,0,46); dsrRow.BackgroundColor3 = Color3.fromRGB(18,18,22)
+        dsrRow.Parent = moveSection; corner(dsrRow, 8)
+        dsrRow.MouseEnter:Connect(function() tw(dsrRow,0.15,{BackgroundColor3=Color3.fromRGB(26,26,32)}) end)
+        dsrRow.MouseLeave:Connect(function() tw(dsrRow,0.15,{BackgroundColor3=Color3.fromRGB(18,18,22)}) end)
+
+        local dsrRowLbl = Instance.new("TextLabel", dsrRow)
+        dsrRowLbl.Size = UDim2.new(0,130,1,0); dsrRowLbl.Position = UDim2.new(0,14,0,0)
+        dsrRowLbl.BackgroundTransparency = 1; dsrRowLbl.Text = "Desync Speed Reducer"
+        dsrRowLbl.Font = Enum.Font.GothamBold; dsrRowLbl.TextSize = 11
+        dsrRowLbl.TextColor3 = C.text; dsrRowLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        -- Speed box
+        local dsrSpVf = Instance.new("Frame", dsrRow)
+        dsrSpVf.Size = UDim2.new(0,40,0,26); dsrSpVf.Position = UDim2.new(0,150,0.5,-13)
+        dsrSpVf.BackgroundColor3 = Color3.fromRGB(36,35,50); corner(dsrSpVf, 7)
+        local dsrSpBox = Instance.new("TextBox", dsrSpVf)
+        dsrSpBox.Size = UDim2.new(1,-6,1,0); dsrSpBox.Position = UDim2.new(0,3,0,0)
+        dsrSpBox.BackgroundTransparency = 1; dsrSpBox.Text = "44"
+        dsrSpBox.Font = Enum.Font.GothamBold; dsrSpBox.TextSize = 12
+        dsrSpBox.TextColor3 = C.text; dsrSpBox.ClearTextOnFocus = false
+        dsrSpBox.FocusLost:Connect(function()
+            local n = tonumber(dsrSpBox.Text)
+            if n then DSR_SPEED = math.clamp(n,1,500); DSR_SPEED_G = DSR_SPEED; dsrSpBox.Text = tostring(DSR_SPEED)
+            else dsrSpBox.Text = tostring(DSR_SPEED) end
+        end)
+
+        -- Steal box
+        local dsrStVf = Instance.new("Frame", dsrRow)
+        dsrStVf.Size = UDim2.new(0,40,0,26); dsrStVf.Position = UDim2.new(0,195,0.5,-13)
+        dsrStVf.BackgroundColor3 = Color3.fromRGB(36,35,50); corner(dsrStVf, 7)
+        local dsrStBox = Instance.new("TextBox", dsrStVf)
+        dsrStBox.Size = UDim2.new(1,-6,1,0); dsrStBox.Position = UDim2.new(0,3,0,0)
+        dsrStBox.BackgroundTransparency = 1; dsrStBox.Text = "28.5"
+        dsrStBox.Font = Enum.Font.GothamBold; dsrStBox.TextSize = 12
+        dsrStBox.TextColor3 = C.text; dsrStBox.ClearTextOnFocus = false
+        dsrStBox.FocusLost:Connect(function()
+            local n = tonumber(dsrStBox.Text)
+            if n then DSR_STEAL = math.clamp(n,1,500); DSR_STEAL_G = DSR_STEAL; dsrStBox.Text = tostring(DSR_STEAL)
+            else dsrStBox.Text = tostring(DSR_STEAL) end
+        end)
+
+        -- Toggle
+        local dsrTrack = Instance.new("Frame", dsrRow)
+        dsrTrack.Size = UDim2.new(0,46,0,26); dsrTrack.Position = UDim2.new(1,-56,0.5,-13)
+        dsrTrack.BorderSizePixel = 0; corner(dsrTrack, 13)
+        dsrTrack.BackgroundColor3 = Color3.fromRGB(40,39,52)
+        local dsrTG = Instance.new("UIGradient", dsrTrack)
+        dsrTG.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(48,47,60)),ColorSequenceKeypoint.new(1,Color3.fromRGB(32,31,42))})
+        local dsrKnob = Instance.new("Frame", dsrTrack)
+        dsrKnob.Size = UDim2.new(0,20,0,20); dsrKnob.Position = UDim2.new(0,3,0.5,-10)
+        dsrKnob.BackgroundColor3 = Color3.fromRGB(255,255,255); corner(dsrKnob, 10)
+        local dsrRowHit = Instance.new("TextButton", dsrRow)
+        dsrRowHit.Size = UDim2.new(1,0,1,0); dsrRowHit.BackgroundTransparency = 1
+        dsrRowHit.Text = ""; dsrRowHit.AutoButtonColor = false; dsrRowHit.ZIndex = 2
+
+        local function setDsrState(v)
+            dsrSwitchState = v
+            tw(dsrTrack,0.18,{BackgroundColor3=v and Color3.fromRGB(110,60,255) or Color3.fromRGB(40,39,52)})
+            tw(dsrKnob,0.18,{Position=v and UDim2.new(1,-23,0.5,-10) or UDim2.new(0,3,0.5,-10)})
+            dsrTG.Color = v and ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(155,55,255)),ColorSequenceKeypoint.new(0.5,Color3.fromRGB(100,65,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(45,130,255))}) or ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(48,47,60)),ColorSequenceKeypoint.new(1,Color3.fromRGB(32,31,42))})
+            -- Show/hide floating button
+            if v then
+                dsrSg.Enabled = true
+                dsrCard.Position = UDim2.new(dsrPosScaleX, dsrPosOffX, 0, -DSRH-20)
+                TweenService:Create(dsrCard, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {Position = UDim2.new(dsrPosScaleX, dsrPosOffX, dsrPosScaleY, dsrPosOffY)}):Play()
+            else
+                dsrOn = false
+                dsrLblBot.Text = "[None]"
+                TweenService:Create(dsrCard, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    {Position = UDim2.new(dsrCard.Position.X.Scale, dsrCard.Position.X.Offset, 0, -DSRH-20)}):Play()
+                task.delay(0.22, function() dsrSg.Enabled = false end)
+            end
+        end
+        dsrRowHit.MouseButton1Click:Connect(function() setDsrState(not dsrSwitchState) end)
+    end
+    toggleSetters._getDsrPos = function() return dsrPosScaleX, dsrPosOffX, dsrPosScaleY, dsrPosOffY end
+    toggleSetters._getDsrSwitchOn = function() return dsrSwitchState end
+    -- Load from config
+    if _cfgGet("dsrOn", false) then
+        dsrSg.Enabled = true
+        dsrCard.Position = UDim2.new(dsrPosScaleX, dsrPosOffX, dsrPosScaleY, dsrPosOffY)
     end
 end
 
@@ -4714,12 +4947,12 @@ makeHeader(moveSection, "UI Settings")
 do
     local luiSwitch = makeSwitch(moveSection, "Lock UI", _cfgGet("lockUI", false), function(on)
         _lockUI = on
-        hudFrame.Active = not on
         hudFrame.Draggable = not on
+        hudFrame.Active = not on
     end)
     toggleSetters.lockUI    = function(v) luiSwitch.set(v, true) end
     toggleSetters._getLockUI = function() return _lockUI end
-    if _cfgGet("lockUI", false) then _lockUI = true end
+    if _cfgGet("lockUI", false) then _lockUI = true; hudFrame.Draggable = false; hudFrame.Active = false end
 end
 
 -- AUTO TP (patched)
@@ -5171,8 +5404,8 @@ do
         if toggleSetters._getWpOffsets then _ox, _oz = toggleSetters._getWpOffsets() end
         return {
             IJ_POWER        = IJ_POWER,
-            SPEED_VAL       = SPEED_VAL,
-            STEAL_SPEED_VAL = STEAL_SPEED_VAL,
+            SPEED_VAL       = dsrOn and dsrPrevSpeed or SPEED_VAL,
+            STEAL_SPEED_VAL = dsrOn and dsrPrevSteal or STEAL_SPEED_VAL,
             apAutoMode      = apAutoMode,
             ijOn            = ijOn,
             igOn            = igOn,
@@ -5205,6 +5438,11 @@ do
             emoteOn         = toggleSetters._getEmoteOn and toggleSetters._getEmoteOn() or false,
             tauntOn         = toggleSetters._getTauntOn and toggleSetters._getTauntOn() or false,
             desyncOn        = toggleSetters._getDesyncOn and toggleSetters._getDesyncOn() or false,
+            dsrOn           = dsrSwitchState or false,
+            dsrBtnPosScaleX = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[1] or 0.04,
+            dsrBtnPosOffX   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[2] or 0,
+            dsrBtnPosScaleY = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[3] or 0,
+            dsrBtnPosOffY   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[4] or 830,
             desyncBtnPosScaleX = toggleSetters._getDesyncPos and ({toggleSetters._getDesyncPos()})[1] or 0.04,
             desyncBtnPosOffX   = toggleSetters._getDesyncPos and ({toggleSetters._getDesyncPos()})[2] or 0,
             desyncBtnPosScaleY = toggleSetters._getDesyncPos and ({toggleSetters._getDesyncPos()})[3] or 0,
@@ -5452,20 +5690,21 @@ function go(pos, speed, cond)
         end
 
         local dir = flatDiff.Unit
+        local actualSpeed = dsrOn and DSR_SPEED_G or speed
 
         if _goFaceLock and not (toggleSetters._getSpinOn and toggleSetters._getSpinOn()) then
             hum:Move(_goFaceLock, false)
             r.AssemblyLinearVelocity = Vector3.new(
-                dir.X * speed,
+                dir.X * actualSpeed,
                 r.AssemblyLinearVelocity.Y,
-                dir.Z * speed
+                dir.Z * actualSpeed
             )
         else
             hum:Move(dir, false)
             r.AssemblyLinearVelocity = Vector3.new(
-                dir.X * speed,
+                dir.X * actualSpeed,
                 r.AssemblyLinearVelocity.Y,
-                dir.Z * speed
+                dir.Z * actualSpeed
             )
         end
     end)
@@ -5749,7 +5988,9 @@ apHit.InputEnded:Connect(function(inp)
 
             if sbVbox then local n = tonumber(sbVbox.Text); if n then SPEED_VAL = math.clamp(n,1,500) end end
             if ssVbox then local n = tonumber(ssVbox.Text); if n then STEAL_SPEED_VAL = math.clamp(n,1,500) end end
-            local speeds = {SPEED_VAL, SPEED_VAL, STEAL_SPEED_VAL, STEAL_SPEED_VAL, STEAL_SPEED_VAL}
+            local _spd = dsrOn and DSR_SPEED_G or SPEED_VAL
+            local _stl = dsrOn and DSR_STEAL_G or STEAL_SPEED_VAL
+            local speeds = {_spd, _spd, _stl, _stl, _stl}
             local labels = {"Going...", "Stealing", "Returning...", "Returning...", "Returning..."}
 
             -- Fixed face direction: WP1 -> WP2 (the steal lane direction)
@@ -5868,7 +6109,9 @@ toggleSetters._onLockChanged = function(lockIsOn)
                 local side = detectMySide()
                 local wps = (side == "right") and WP_LEFT or WP_RIGHT
                 auto1 = true
-                local speeds = {SPEED_VAL, SPEED_VAL, STEAL_SPEED_VAL, STEAL_SPEED_VAL, STEAL_SPEED_VAL}
+                local _spd = dsrOn and DSR_SPEED_G or SPEED_VAL
+            local _stl = dsrOn and DSR_STEAL_G or STEAL_SPEED_VAL
+            local speeds = {_spd, _spd, _stl, _stl, _stl}
                 local labels = {"Going...", "Going...", "Stealing", "Returning...", "Returning..."}
                 for i = 1, #wps do
                     setApActive(true, labels[i])
@@ -6072,13 +6315,19 @@ end)
 
 
 -- AUTO PLAY AUTOROTATE ENFORCER
--- Runs every heartbeat, forces AutoRotate=false AND exact face direction
 RunService.Heartbeat:Connect(function()
     if not _apRunning then return end
     local char = player.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hum = char and char:FindFirstChild("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if hum and hum.AutoRotate then hum.AutoRotate = false end
+    -- Apply DSR speed mid-autoplay
+    if hum then
+        local targetSpeed = dsrOn and DSR_SPEED_G or SPEED_VAL
+        if hum.WalkSpeed ~= targetSpeed then
+            hum.WalkSpeed = targetSpeed
+        end
+    end
     local _spinActive = toggleSetters._getSpinOn and toggleSetters._getSpinOn() or false
     -- Gentle face direction: only correct if significantly off
     if root and _goFaceLock and not (toggleSetters._getSpinOn and toggleSetters._getSpinOn()) then
