@@ -5376,9 +5376,10 @@ do
         sw("_sw_tpOn"); sw("_sw_emoteOn"); sw("_sw_tauntOn"); sw("_sw_desyncOn")
         sw("_sw_amOn"); sw("_sw_duelFovOn"); sw("_sw_espOn")
         sw("_sw_antiFpsOn"); sw("_sw_optOn"); sw("_sw_nccOn")
-        -- autoplay: stop running but keep button visible
-        autoRunning = false; auto1 = false; auto2 = false
+        -- autoplay: stop running, turn off switch when available
+        autoRunning = false; auto1 = false; auto2 = false; autoplayOn = false
         pcall(function() setApActive(false, "Play") end)
+        pcall(function() if autoplaySwitch then autoplaySwitch.set(false) end end)
         sw("_sw_wpOn")
         fn("_fn_setDsrState", false)
         arOn = false; disableIJ(); disableSB(); disableSS()
@@ -6334,10 +6335,12 @@ do
         rebuildWaypoints()
     end
     toggleSetters._resetWpOffsets = function()
+        local defOX = {0, -1.35, 0, 0, 0}
+        local defOZ = {0, 0, 0, 0.2, 0}
         for i = 1, 5 do
-            WP_OX[i] = 0; WP_OZ[i] = 0
-            if oxBoxes[i] then oxBoxes[i].Text = tostring(DISP_X[i]) end
-            if ozBoxes[i] then ozBoxes[i].Text = tostring(DISP_Z[i]) end
+            WP_OX[i] = defOX[i]; WP_OZ[i] = defOZ[i]
+            if oxBoxes[i] then oxBoxes[i].Text = tostring(math.round((DISP_X[i] + WP_OX[i]) * 100) / 100) end
+            if ozBoxes[i] then ozBoxes[i].Text = tostring(math.round((DISP_Z[i] + WP_OZ[i]) * 100) / 100) end
         end
         rebuildWaypoints()
     end
