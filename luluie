@@ -1774,40 +1774,15 @@ do
         end
     end)
 
-    -- Mobile: detect jump button hold via InputBegan/Ended on jump keycode
+    -- Mobile: tap jump = toggle float up/down
     if isMobile then
-        UserInputService.InputBegan:Connect(function(inp, gpe)
-            if gpe or not sjOnState then return end
-            if inp.KeyCode == Enum.KeyCode.ButtonA
-            or inp.UserInputType == Enum.UserInputType.Touch then return end
-        end)
-        -- Use JumpRequest for mobile jump detection
-        local jumpreqConn = nil
-        local function onSjStateChanged()
-            if sjOnState then
-                if not jumpreqConn then
-                    jumpreqConn = UserInputService.JumpRequest:Connect(function()
-                        if not sjOnState then return end
-                        sjHolding = true
-                        task.delay(0.5, function()
-                            if sjHolding and sjOnState then
-                                sjHolding = false
-                                doTPDown()
-                            end
-                        end)
-                    end)
-                end
-            else
-                if jumpreqConn then jumpreqConn:Disconnect(); jumpreqConn = nil end
+        UserInputService.JumpRequest:Connect(function()
+            if not sjOnState then return end
+            if sjHolding then
                 sjHolding = false
-            end
-        end
-        -- Watch sjOnState changes via heartbeat
-        local _prevSjState = false
-        RunService.Heartbeat:Connect(function()
-            if sjOnState ~= _prevSjState then
-                _prevSjState = sjOnState
-                onSjStateChanged()
+                doTPDown()
+            else
+                sjHolding = true
             end
         end)
     end
@@ -3799,7 +3774,7 @@ do
     local DSRW = isMobile and 88 or 92
     local DSRH = isMobile and 90 or 92
 
-    local dsrPosScaleX = _cfgGetPos("dsrBtnPosScaleX", 0.84)
+    local dsrPosScaleX = _cfgGetPos("dsrBtnPosScaleX", isMobile and 0.82 or 0.84)
     local dsrPosOffX   = _cfgGetPos("dsrBtnPosOffX",   isMobile and -96 or -104)
     local dsrPosScaleY = _cfgGetPos("dsrBtnPosScaleY", 0)
     local dsrPosOffY   = _cfgGetPos("dsrBtnPosOffY",   360)
