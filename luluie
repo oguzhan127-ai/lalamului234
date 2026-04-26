@@ -3910,9 +3910,9 @@ do
 
         local spVf=Instance.new("Frame",dsrRow)
         spVf.Size=UDim2.new(0,40,0,26); spVf.Position=UDim2.new(0,148,0.5,-13)
-        spVf.BackgroundColor3=Color3.fromRGB(36,35,50); corner(spVf,7)
+        spVf.BackgroundColor3=Color3.fromRGB(36,35,50); spVf.ZIndex=3; corner(spVf,7)
         local spBox=Instance.new("TextBox",spVf)
-        spBox.Size=UDim2.new(1,-6,1,0); spBox.Position=UDim2.new(0,3,0,0)
+        spBox.ZIndex=4; spBox.Size=UDim2.new(1,-6,1,0); spBox.Position=UDim2.new(0,3,0,0)
         spBox.BackgroundTransparency=1; spBox.Text="44"
         spBox.Font=Enum.Font.GothamBold; spBox.TextSize=12; spBox.TextColor3=C.text; spBox.ClearTextOnFocus=false
         spBox.FocusLost:Connect(function()
@@ -3923,9 +3923,9 @@ do
 
         local stVf=Instance.new("Frame",dsrRow)
         stVf.Size=UDim2.new(0,40,0,26); stVf.Position=UDim2.new(0,192,0.5,-13)
-        stVf.BackgroundColor3=Color3.fromRGB(36,35,50); corner(stVf,7)
+        stVf.BackgroundColor3=Color3.fromRGB(36,35,50); stVf.ZIndex=3; corner(stVf,7)
         local stBox=Instance.new("TextBox",stVf)
-        stBox.Size=UDim2.new(1,-6,1,0); stBox.Position=UDim2.new(0,3,0,0)
+        stBox.ZIndex=4; stBox.Size=UDim2.new(1,-6,1,0); stBox.Position=UDim2.new(0,3,0,0)
         stBox.BackgroundTransparency=1; stBox.Text="28.5"
         stBox.Font=Enum.Font.GothamBold; stBox.TextSize=12; stBox.TextColor3=C.text; stBox.ClearTextOnFocus=false
         stBox.FocusLost:Connect(function()
@@ -3993,7 +3993,7 @@ do
     -- Load DSR button active state
     if _cfgGet("dsrBtnActive", false) then
         task.defer(function()
-            dsrPrevSpeed = SPEED_VAL; dsrPrevSteal = STEAL_SPEED_VAL
+            dsrPrevSpeed = _cfgGet("dsrRealSpeed", SPEED_VAL); dsrPrevSteal = _cfgGet("dsrRealSteal", STEAL_SPEED_VAL)
             dsrOn = true
             DSR_SPEED_G = DSR_SPEED; DSR_STEAL_G = DSR_STEAL
             SPEED_VAL = DSR_SPEED; STEAL_SPEED_VAL = DSR_STEAL
@@ -5547,6 +5547,8 @@ do
             antiFpsOn       = antiFpsOn or false,
             dsrMenuOn       = dsrSwitchState or false,
             dsrBtnActive    = dsrOn or false,
+            dsrRealSpeed    = dsrOn and (dsrPrevSpeed or SPEED_VAL) or SPEED_VAL,
+            dsrRealSteal    = dsrOn and (dsrPrevSteal or STEAL_SPEED_VAL) or STEAL_SPEED_VAL,
             dsrBtnPosScaleX = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[1] or 0.84,
             dsrBtnPosOffX   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[2] or (isMobile and -96 or -104),
             dsrBtnPosScaleY = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[3] or 0,
@@ -6573,6 +6575,15 @@ RunService.Heartbeat:Connect(function()
         if _rh then _rh.AutoRotate = true end
         if _sbWasOn and toggleSetters.sbOn then toggleSetters.sbOn(true) end
         if _ssWasOn and toggleSetters.ssOn then toggleSetters.ssOn(true) end
+        -- If DSR is active, keep DSR speed
+        if dsrOn then
+            SPEED_VAL = DSR_SPEED_G
+            STEAL_SPEED_VAL = DSR_STEAL_G
+            if sbVbox then sbVbox.Text = tostring(DSR_SPEED_G) end
+            if ssVbox then ssVbox.Text = tostring(DSR_STEAL_G) end
+            local _dh = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if _dh then _dh.WalkSpeed = DSR_SPEED_G end
+        end
         -- If DSR is active, restore DSR speed without touching SPEED_VAL
         if dsrOn then
             local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
