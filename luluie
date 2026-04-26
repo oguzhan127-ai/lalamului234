@@ -1774,10 +1774,14 @@ do
         end
     end)
 
-    -- Mobile: tap jump = toggle float up/down
+    -- Mobile: tap jump button = start floating, tap again = TP down
     if isMobile then
+        local _sjJumpDebounce = false
         UserInputService.JumpRequest:Connect(function()
             if not sjOnState then return end
+            if _sjJumpDebounce then return end
+            _sjJumpDebounce = true
+            task.delay(0.3, function() _sjJumpDebounce = false end)
             if sjHolding then
                 sjHolding = false
                 doTPDown()
@@ -5527,7 +5531,7 @@ do
             dsrMenuOn       = dsrSwitchState or false,
             dsrBtnActive    = dsrOn or false,
             dsrBtnPosScaleX = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[1] or 0.84,
-            dsrBtnPosOffX   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[2] or -104,
+            dsrBtnPosOffX   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[2] or (isMobile and -96 or -104),
             dsrBtnPosScaleY = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[3] or 0,
             dsrBtnPosOffY   = toggleSetters._getDsrPos and ({toggleSetters._getDsrPos()})[4] or 360,
             desyncBtnPosScaleX = toggleSetters._getDesyncPos and ({toggleSetters._getDesyncPos()})[1] or 0.04,
@@ -5705,6 +5709,13 @@ do
         -- Reset positions
         if toggleSetters._resetLockPos   then toggleSetters._resetLockPos()   end
         if toggleSetters._resetDropPos   then toggleSetters._resetDropPos()   end
+        -- Reset DSR position
+        pcall(function()
+            dsrPosScaleX = isMobile and 0.82 or 0.84
+            dsrPosOffX   = isMobile and -96 or -104
+            dsrPosScaleY = 0
+            dsrPosOffY   = 360
+        end)
         if toggleSetters._resetApPos     then toggleSetters._resetApPos()     end
         -- Reset AP position via _G reference
         pcall(function()
