@@ -1733,6 +1733,9 @@ do
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChild("Humanoid")
         if not hrp or not hum then return end
+        -- Temporarily disable MA align so it doesn't interfere with TP
+        local maWasEnabled = false
+        if maAlign then maWasEnabled = maAlign.Enabled; maAlign.Enabled = false end
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = {char}
@@ -1742,6 +1745,10 @@ do
             hrp.CFrame = CFrame.new(result.Position + Vector3.new(0, 3.2, 0)) * (hrp.CFrame - hrp.CFrame.Position)
             hrp.AssemblyLinearVelocity = Vector3.new(currentVel.X, 0, currentVel.Z)
             hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+        -- Restore MA align
+        if maAlign and maWasEnabled then
+            task.defer(function() maAlign.Enabled = true end)
         end
     end
 
