@@ -32,6 +32,13 @@ local function _cfgGet(key, default)
     if _CFG[key] ~= nil then return _CFG[key] end
     return default
 end
+-- If platform changed (PC<->mobile), ignore saved button positions
+local _platformChanged = (_CFG.wasMobile ~= nil) and (_CFG.wasMobile ~= UserInputService.TouchEnabled)
+local function _cfgGetPos(key, default)
+    if _platformChanged then return default end
+    if _CFG[key] ~= nil then return _CFG[key] end
+    return default
+end
 -- ============================================================
 
 -- Mobile detection
@@ -734,8 +741,9 @@ local function makeInputSwitch(parent, label, default, minV, maxV, onInput, swit
 
     local bf = Instance.new("Frame", row)
     bf.Size = UDim2.new(0, 54, 0, 26); bf.Position = UDim2.new(0, 118, 0.5, -13)
-    bf.BackgroundColor3 = Color3.fromRGB(36, 35, 50); corner(bf, 7)
+    bf.BackgroundColor3 = Color3.fromRGB(36, 35, 50); bf.ZIndex = 3; corner(bf, 7)
     local box = Instance.new("TextBox", bf)
+    box.ZIndex = 4
     box.Size = UDim2.new(1,-8,1,0); box.Position = UDim2.new(0,4,0,0)
     box.BackgroundTransparency = 1; box.Text = tostring(default)
     box.Font = Enum.Font.GothamBold; box.TextSize = 13; box.TextColor3 = C.text
@@ -1707,19 +1715,20 @@ local arCharCache = {}
 local SJ_HEIGHT_G, SJ_POWER_G, sjOnState = 12, 55, false
 local sjHolding = false
 local sjConn = nil
-local _sjSwitchRef = nil
 local _sjWasIJOn = false
+local _sjSwitchRef = nil
+
 -- SUPER JUMP
 do
     local sjOn = false
-    -- sjHolding declared globally above
-    -- sjConn declared globally above
-    local SJ_HEIGHT = _cfgGet("sjHeight", 12)
-    local SJ_POWER  = _cfgGet("sjPower",  55)
-    SJ_HEIGHT_G = SJ_HEIGHT
-    SJ_POWER_G = SJ_POWER
+    -- sjHolding, sjConn declared globally above
 
-    local function sjTPDown()
+    local FloatSpeed = _cfgGet("sjPower", 55)
+    local MaxHeightLimit = _cfgGet("sjHeight", 12)
+    SJ_HEIGHT_G = MaxHeightLimit
+    SJ_POWER_G = FloatSpeed
+
+    local function doTPDown()
         local char = player.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChild("Humanoid")
@@ -1729,70 +1738,96 @@ do
         params.FilterDescendantsInstances = {char}
         local result = workspace:Raycast(hrp.Position, Vector3.new(0, -1000, 0), params)
         if result then
-            local targetPos = result.Position + Vector3.new(0, 3.2, 0)
-            hrp.CFrame = CFrame.new(targetPos) * (hrp.CFrame - hrp.CFrame.Position)
-            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+            local currentVel = hrp.AssemblyLinearVelocity
+            hrp.CFrame = CFrame.new(result.Position + Vector3.new(0, 3.2, 0)) * (hrp.CFrame - hrp.CFrame.Position)
+            hrp.AssemblyLinearVelocity = Vector3.new(currentVel.X, 0, currentVel.Z)
             hum:ChangeState(Enum.HumanoidStateType.Running)
         end
     end
 
-    local function startSJLift()
-        if sjConn then sjConn:Disconnect() end
-        sjConn = RunService.Heartbeat:Connect(function()
-            if not sjHolding or not sjOnState then
-                if sjConn then sjConn:Disconnect(); sjConn = nil end
-                return
-            end
-            local char = player.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                if hrp.Position.Y < SJ_HEIGHT then
-                    hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, SJ_POWER, hrp.AssemblyLinearVelocity.Z)
-                else
-                    hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
-                end
-            end
-        end)
-    end
+    -- Heartbeat: apply float force
+    -- Heartbeat: apply float force
+    RunService.Heartbeat:Connect(function()
+        if not sjOnState or not sjHolding then return end
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if hrp.Position.Y < MaxHeightLimit then
+            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, FloatSpeed, hrp.AssemblyLinearVelocity.Z)
+        else
+            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+        end
+    end)
 
-    UserInputService.InputBegan:Connect(function(inp, processed)
-        if processed or not sjOnState then return end
+    -- PC: Space hold/release
+    UserInputService.InputBegan:Connect(function(inp, gpe)
+        if gpe or not sjOnState then return end
         if inp.KeyCode == Enum.KeyCode.Space then
             sjHolding = true
-            startSJLift()
         end
     end)
     UserInputService.InputEnded:Connect(function(inp)
-        if inp.KeyCode == Enum.KeyCode.Space and sjOnState then
+        if not sjOnState then return end
+        if inp.KeyCode == Enum.KeyCode.Space then
             sjHolding = false
-            sjTPDown()
+            doTPDown()
         end
     end)
 
-    local sjSwitch, sjBox = makeInputSwitch(moveSection, "Super Jump", SJ_HEIGHT, 1, 1000,
-        function(v) SJ_HEIGHT = v; SJ_HEIGHT_G = v end,
+    -- Mobile: bind jump action for hold detection
+    if isMobile then
+        local CAS = game:GetService("ContextActionService")
+        CAS:BindAction("UN4_SJJump", function(_, state, _)
+            if not sjOnState then return end
+            if state == Enum.UserInputState.Begin then
+                sjHolding = true
+            elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+                if sjHolding then
+                    sjHolding = false
+                    doTPDown()
+                end
+            end
+        end, false, Enum.PlayerActions.CharacterJump)
+    end
+
+
+    local sjSwitch, sjBox = makeInputSwitch(moveSection, "Super Jump", MaxHeightLimit, 1, 1000,
+        function(v)
+            MaxHeightLimit = v; SJ_HEIGHT_G = v
+        end,
         _cfgGet("sjOn", false),
         function(on)
-            sjOn = on; sjOnState = on -- keep in sync
+            sjOn = on; sjOnState = on
             if on then
                 _sjWasIJOn = ijOn
-                disableIJ()
-                if _G._ijSwitch then _G._ijSwitch.set(false, true) end
+                if ijOn then
+                    disableIJ()
+                    task.defer(function() if _G._ijSwitch then _G._ijSwitch.set(false, true) end end)
+                end
             else
+                sjHolding = false
+                if sjConn then sjConn:Disconnect(); sjConn = nil end
                 if _sjWasIJOn then
                     enableIJ()
-                    if _G._ijSwitch then _G._ijSwitch.set(true, true) end
+                    task.defer(function() if _G._ijSwitch then _G._ijSwitch.set(true, true) end end)
                 end
             end
         end)
-
-    makeInput(moveSection, "Jump Power", SJ_POWER, 1, 500, function(v) SJ_POWER = v; SJ_POWER_G = v end)
+    makeInput(moveSection, "Jump Power", FloatSpeed, 1, 500, function(v)
+        FloatSpeed = v; SJ_POWER_G = v
+    end)
     _G._sjSw = sjSwitch
     _sjSwitchRef = sjSwitch
 
-
-
     if _cfgGet("sjOn", false) then sjOn = true; sjOnState = true end
+
+    -- Final mutual exclusion on startup
+    task.defer(function()
+        if sjOnState and ijOn then
+            disableIJ()
+            if _G._ijSwitch then _G._ijSwitch.set(false, true) end
+        end
+    end)
 end
 
 
@@ -1911,7 +1946,6 @@ local ijSwitch = makeSwitch(moveSection, "Infinite Jump", _cfgGet("ijOn", false)
             sjOn = false; sjOnState = false
             sjHolding = false
             if sjConn then sjConn:Disconnect(); sjConn = nil end
-            if sjLiftConn then sjLiftConn:Disconnect(); sjLiftConn = nil end
             if _sjSwitchRef then _sjSwitchRef.set(false, true) end
         end
         enableIJ()
@@ -2204,10 +2238,10 @@ do
     local LB_DEF_SY   = 0
     local LB_DEF_OY   = 60
 
-    local lPosScaleX  = _cfgGet("lockPosScaleX",  LB_DEF_SX)
-    local lPosOffX    = _cfgGet("lockPosOffX",    LB_DEF_OX)
-    local lPosScaleY  = _cfgGet("lockPosScaleY",  LB_DEF_SY)
-    local lPosOffY    = _cfgGet("lockPosOffY",    LB_DEF_OY)
+    local lPosScaleX  = _cfgGetPos("lockPosScaleX",  LB_DEF_SX)
+    local lPosOffX    = _cfgGetPos("lockPosOffX",    LB_DEF_OX)
+    local lPosScaleY  = _cfgGetPos("lockPosScaleY",  LB_DEF_SY)
+    local lPosOffY    = _cfgGetPos("lockPosOffY",    LB_DEF_OY)
 
     local lCard = Instance.new("Frame", lockSg)
     lCard.Size             = UDim2.new(0, LBW, 0, LBH)
@@ -2439,10 +2473,10 @@ do
     local DB_DEF_SY  = 0
     local DB_DEF_OY  = 260
 
-    local dPosScaleX = _cfgGet("dropPosScaleX", DB_DEF_SX)
-    local dPosOffX   = _cfgGet("dropPosOffX",   DB_DEF_OX)
-    local dPosScaleY = _cfgGet("dropPosScaleY", DB_DEF_SY)
-    local dPosOffY   = _cfgGet("dropPosOffY",   DB_DEF_OY)
+    local dPosScaleX = _cfgGetPos("dropPosScaleX", DB_DEF_SX)
+    local dPosOffX   = _cfgGetPos("dropPosOffX",   DB_DEF_OX)
+    local dPosScaleY = _cfgGetPos("dropPosScaleY", DB_DEF_SY)
+    local dPosOffY   = _cfgGetPos("dropPosOffY",   DB_DEF_OY)
 
     -- DROP: 1-1 from VEX Hub startWalkFling
     local _wfConns = {}
@@ -3553,16 +3587,35 @@ do
     local function enableDesync()
         DesyncActive = true
         setDesyncFFlags()
-        if raknet and raknet.add_send_hook then
-            pcall(function() raknet.add_send_hook(RakNetLogic) end)
-        end
+        pcall(function()
+            if raknet then
+                if raknet.desync then raknet.desync(true) end
+                if raknet.add_send_hook then raknet.add_send_hook(RakNetLogic) end
+            end
+        end)
+        -- Auto reset once after 0.8 seconds
+        local _didReset = false
+        task.delay(0.8, function()
+            if not DesyncActive or _didReset then return end
+            _didReset = true
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChild("Humanoid")
+            if hrp and hum then
+                hrp.CFrame = CFrame.new(1000003.62, 999998.38, 8.11)
+                hum.Health = 0
+            end
+        end)
     end
 
     local function disableDesync()
         DesyncActive = false
-        if raknet and raknet.remove_send_hooks then
-            pcall(function() raknet.remove_send_hooks() end)
-        end
+        pcall(function()
+            if raknet then
+                if raknet.desync then raknet.desync(false) end
+                if raknet.remove_send_hooks then raknet.remove_send_hooks() end
+            end
+        end)
         local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
         if hum then
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
@@ -3724,10 +3777,10 @@ do
     local DSRW = isMobile and 88 or 92
     local DSRH = isMobile and 90 or 92
 
-    local dsrPosScaleX = _cfgGet("dsrBtnPosScaleX", isMobile and 0.82 or 0.84)
-    local dsrPosOffX   = _cfgGet("dsrBtnPosOffX",   isMobile and -96 or -104)
-    local dsrPosScaleY = _cfgGet("dsrBtnPosScaleY", 0)
-    local dsrPosOffY   = _cfgGet("dsrBtnPosOffY",   360)
+    local dsrPosScaleX = _cfgGetPos("dsrBtnPosScaleX", isMobile and 0.82 or 0.84)
+    local dsrPosOffX   = _cfgGetPos("dsrBtnPosOffX",   isMobile and -96 or -104)
+    local dsrPosScaleY = _cfgGetPos("dsrBtnPosScaleY", 0)
+    local dsrPosOffY   = _cfgGetPos("dsrBtnPosOffY",   360)
 
     local dsrCard = Instance.new("Frame", dsrSg)
     dsrCard.Size             = UDim2.new(0, DSRW, 0, DSRH)
@@ -5472,6 +5525,7 @@ do
             emoteOn         = toggleSetters._getEmoteOn and toggleSetters._getEmoteOn() or false,
             tauntOn         = toggleSetters._getTauntOn and toggleSetters._getTauntOn() or false,
             desyncOn        = toggleSetters._getDesyncOn and toggleSetters._getDesyncOn() or false,
+            wasMobile       = isMobile,
             antiFpsOn       = antiFpsOn or false,
             dsrMenuOn       = dsrSwitchState or false,
             dsrBtnActive    = dsrOn or false,
@@ -5645,7 +5699,9 @@ do
 
         -- Reset values
         IJ_POWER = 42; SPEED_VAL = 60; STEAL_SPEED_VAL = 30
+        SJ_HEIGHT_G = 12; SJ_POWER_G = 55; sjOnState = false; sjHolding = false
         if ijPowerBox then ijPowerBox.Text = tostring(IJ_POWER) end
+        -- SJ height/power reset handled via switch below
         if sbVbox     then sbVbox.Text     = tostring(SPEED_VAL) end
         if ssVbox     then ssVbox.Text     = tostring(STEAL_SPEED_VAL) end
 
@@ -5848,16 +5904,16 @@ duelSg = makeGui("ShadowHUD_Duels")
 applyMobileScale(duelSg)
 duelSg.Enabled = _cfgGet("autoplayOn", false)
 
-local CBW = isMobile and 88 or 92
-local CBH = isMobile and 90 or 92
-local C_GAP = isMobile and 8 or 10
+CBW = isMobile and 88 or 92
+CBH = isMobile and 90 or 92
+C_GAP = isMobile and 8 or 10
 
-local C_RIGHT_MARGIN = isMobile and 8 or 12
-local C_COL1_OX = -(CBW * 2 + C_GAP + C_RIGHT_MARGIN)
-local C_COL2_OX = -(CBW + C_RIGHT_MARGIN)
-local C_ROW1_OY = isMobile and 60 or 60
-local C_ROW2_OY = C_ROW1_OY + CBH + C_GAP
-local C_ROW3_OY = C_ROW2_OY + CBH + C_GAP
+C_RIGHT_MARGIN = isMobile and 8 or 12
+C_COL1_OX = -(CBW * 2 + C_GAP + C_RIGHT_MARGIN)
+C_COL2_OX = -(CBW + C_RIGHT_MARGIN)
+C_ROW1_OY = isMobile and 60 or 60
+C_ROW2_OY = C_ROW1_OY + CBH + C_GAP
+C_ROW3_OY = C_ROW2_OY + CBH + C_GAP
 
 local function makeCardBtn(topText, botText, col, row)
     local card = Instance.new("Frame", duelSg)
@@ -6018,12 +6074,11 @@ local function makeCardBtn(topText, botText, col, row)
     return cHit, setActive, slideIn, card, function() return cDragging end, getPos, resetPos, setPos
 end
 
-local AP_DEF_SX = isMobile and 0.82 or 0.84
-local AP_DEF_OX = isMobile and -96 or -104
-local AP_DEF_SY = 0
-local AP_DEF_OY = 260
+AP_DEF_SX = isMobile and 0.82 or 0.84
+AP_DEF_OX = isMobile and -96 or -104
+AP_DEF_SY = 0
+AP_DEF_OY = 260
 
-local apHit, apCard, apDragged, apSetPos
 apHit, setApActive, slideAp, apCard, apDragged, apGetPos, apResetPos, apSetPos = makeCardBtn("Auto", "Play", 1, 1)
 _G._apSetPos = apSetPos
 _G._apIsMobile = isMobile
@@ -6067,7 +6122,7 @@ RunService.Heartbeat:Connect(function()
     _apRunning = autoRunning
 end)
 
-local function _hasBase()
+function _hasBase()
     local plots = workspace:FindFirstChild("Plots")
     if not plots then return false end
     for _, plot in ipairs(plots:GetChildren()) do
@@ -6742,8 +6797,8 @@ task.delay(0.1, function()
         if _sjSwitchRef then _sjSwitchRef.set(false, true) end
     end
 end)
-    local mDefOY = _cfgGet("menuBtnOY", isMobile and 160 or 140)
-    local mDefOX = _cfgGet("menuBtnOX", 12)
+    local mDefOY = _cfgGetPos("menuBtnOY", isMobile and 160 or 140)
+    local mDefOX = _cfgGetPos("menuBtnOX", 12)
     local mCurSX, mCurOX, mCurSY, mCurOY = 0, mDefOX, 0, mDefOY
 
     local menuGui = Instance.new("ScreenGui")
